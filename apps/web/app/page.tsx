@@ -15,7 +15,7 @@ export default function ChatPage() {
   const [isLoadingRooms, setIsLoadingRooms] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
-  const { messages, sendMessage, isConnected, error } = useChat(
+  const { messages, sendMessage, isConnected, isCryptoInitialized, error } = useChat(
     currentRoomId,
     user
   );
@@ -89,11 +89,19 @@ export default function ChatPage() {
               <h1 className="text-xl font-semibold text-gray-900">
                 {rooms.find((r) => r.id === currentRoomId)?.name || "Chat"}
               </h1>
-              <div className="flex items-center space-x-2 text-sm text-gray-500">
-                <div
-                  className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`}
-                />
-                <span>{isConnected ? "Connected" : "Disconnected"}</span>
+              <div className="flex items-center space-x-4 text-sm text-gray-500">
+                <div className="flex items-center space-x-2">
+                  <div
+                    className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`}
+                  />
+                  <span>{isConnected ? "Connected" : "Disconnected"}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div
+                    className={`w-2 h-2 rounded-full ${isCryptoInitialized ? "bg-blue-500" : "bg-yellow-500"}`}
+                  />
+                  <span>{isCryptoInitialized ? "Encrypted" : "Initializing..."}</span>
+                </div>
               </div>
             </div>
             <div className="text-sm text-gray-600">
@@ -118,7 +126,10 @@ export default function ChatPage() {
               <MessageList messages={messages} />
             )}
 
-            <MessageInput onSendMessage={sendMessage} disabled={!isConnected} />
+            <MessageInput 
+              onSendMessage={sendMessage} 
+              disabled={!isConnected || !isCryptoInitialized} 
+            />
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">

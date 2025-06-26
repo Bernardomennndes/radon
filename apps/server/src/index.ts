@@ -6,8 +6,20 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { DatabaseService } from './database.js';
-import type { SocketEvents, CreateMessagePayload, JoinRoomPayload } from './types.js';
-import { drizzleUserToSocket, drizzleMessageToSocket } from './types.js';
+import { cryptoService } from './crypto.js';
+import type { 
+  SocketEvents, 
+  CreateMessagePayload, 
+  CreateEncryptedMessagePayload,
+  JoinRoomPayload,
+  InitializeCryptoPayload
+} from './types.js';
+import { 
+  drizzleUserToSocket, 
+  legacyUserToSocket,
+  drizzleMessageToSocket, 
+  drizzleEncryptedMessageToSocket 
+} from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -69,11 +81,43 @@ app.post('/api/rooms', async (req, res) => {
 app.post('/api/users', async (req, res) => {
   try {
     const { username, avatar_url } = req.body;
-    const user = await db.createUser(username, avatar_url);
+    
+    // Gerar chaves de criptografia para o novo usuário
+    const userKeys = cryptoService.generateUserKeys(username);
+    
+    // Criar usuário no banco com as chaves
+    const user = await db.createUser(username, avatar_url, userKeys);
     res.status(201).json(user);
   } catch (error) {
     console.error('Error creating user:', error);
     res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+app.get('/api/users/:userId/keys', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const userKeys = await db.getUserKeys(userId);
+    
+    if (!userKeys) {
+      return res.status(404).json({ error: 'User keys not found' });
+    }
+    
+    res.json(userKeys);
+  } catch (error) {
+    console.error('Error fetching user keys:', error);
+    res.status(500).json({ error: 'Failed to fetch user keys' });
+  }
+});
+
+app.get('/api/rooms/:roomId/encrypted-messages', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const messages = await db.getEncryptedMessages(roomId);
+    res.json(messages);
+  } catch (error) {
+    console.error('Error fetching encrypted messages:', error);
+    res.status(500).json({ error: 'Failed to fetch encrypted messages' });
   }
 });
 
@@ -104,8 +148,78 @@ io.on('connection', (socket) => {
       // Join the room
       socket.join(room_id);
       
-      // Notify others in the room
-      socket.to(room_id).emit('user_joined', { user: drizzleUserToSocket(user), room_id });
+      // Store user_id in socket data for tracking
+      socket.data = { ...socket.data, user_id, room_id };
+      
+      // Get all users currently in the room (after this user joined)
+      const socketsInRoom = await io.in(room_id).fetchSockets();
+      const userIds = new Set<string>();
+      
+      console.log(`Total sockets in room ${room_id}: ${socketsInRoom.length}`);
+      
+      // Collect user IDs from all sockets in the room
+      for (const socketInRoom of socketsInRoom) {
+        console.log(`Socket ${socketInRoom.id} has user_id:`, socketInRoom.data?.user_id);
+        if (socketInRoom.data?.user_id && socketInRoom.data.user_id !== user_id) {
+          userIds.add(socketInRoom.data.user_id);
+        }
+      }
+      
+      console.log(`Found ${userIds.size} other users in room ${room_id}:`, Array.from(userIds));
+      
+      // Create crypto sessions with each user in the room
+      for (const otherUserId of userIds) {
+        try {
+          console.log(`Checking session between ${user_id} and ${otherUserId} in room ${room_id}`);
+          
+          // Check if session already exists
+          const existingSession = await db.getCryptoSession(user_id, otherUserId, room_id);
+          
+          if (!existingSession) {
+            console.log(`Creating new crypto session between ${user_id} and ${otherUserId}`);
+            
+            // Generate session ID
+            const sessionId = `${room_id}_${[user_id, otherUserId].sort().join('_')}`;
+            
+            // Create new crypto session
+            const sortedUsers = [user_id, otherUserId].sort();
+            const newSession = {
+              sessionId,
+              userId1: sortedUsers[0]!,
+              userId2: sortedUsers[1]!,
+              roomId: room_id,
+              sessionState: JSON.stringify({}),
+              rootKey: cryptoService.generateRootKey(),
+              sendingChainKey: cryptoService.generateChainKey(),
+              receivingChainKey: cryptoService.generateChainKey(),
+              messageKeys: JSON.stringify([]),
+            };
+            
+            await db.createCryptoSession(newSession);
+            console.log(`✅ Created crypto session between ${user.username} and user ${otherUserId} in room ${room.name}`);
+          } else {
+            console.log(`Session already exists between ${user_id} and ${otherUserId}`);
+          }
+        } catch (sessionError) {
+          console.error('❌ Error creating crypto session:', sessionError);
+          // Don't fail the join if session creation fails
+        }
+      }
+      
+      // Notify others in the room AND notify the joining user about existing users
+      socket.to(room_id).emit('user_joined', { user: legacyUserToSocket(user), room_id });
+      
+      // Notify the joining user about all existing users in the room
+      for (const otherUserId of userIds) {
+        try {
+          const otherUser = await db.getUser(otherUserId);
+          if (otherUser) {
+            socket.emit('user_already_in_room', { user: legacyUserToSocket(otherUser), room_id });
+          }
+        } catch (error) {
+          console.error('Error fetching other user data:', error);
+        }
+      }
       
       console.log(`User ${user.username} joined room ${room.name}`);
       
@@ -129,37 +243,98 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('send_message', async (payload: CreateMessagePayload) => {
+  socket.on('send_encrypted_message', async (payload: CreateEncryptedMessagePayload) => {
     try {
-      const { content, user_id, room_id } = payload;
+      const { 
+        encrypted_content, 
+        sender_key_id, 
+        recipient_key_id, 
+        message_number, 
+        nonce, 
+        user_id, 
+        room_id 
+      } = payload;
       
-      // Validate user and room exist
+      // Validar usuário e sala
       const user = await db.getUser(user_id);
       const room = await db.getRoom(room_id);
       
       if (!user) {
         socket.emit('error', { message: 'User not found' });
-        console.error(`Error sending message: User not found: ${user_id}`);
+        console.error(`Error sending encrypted message: User not found: ${user_id}`);
         return;
       }
 
       if (!room) {
         socket.emit('error', { message: 'Room not found' });
-        console.error(`Error sending message: Room not found: ${room_id}`);
+        console.error(`Error sending encrypted message: Room not found: ${room_id}`);
         return;
       }
       
-      // Save message to database
-      const message = await db.createMessage(content, user_id, room_id);
+      // Preparar dados criptografados
+      const encryptedData = {
+        encryptedContent: encrypted_content,
+        senderKeyId: sender_key_id,
+        recipientKeyId: recipient_key_id,
+        messageNumber: message_number,
+        previousMessageNumber: (parseInt(message_number) - 1).toString(),
+        nonce: nonce,
+      };
       
-      // Emit to all users in the room
-      io.to(room_id).emit('message_received', drizzleMessageToSocket(message));
+      // Salvar mensagem criptografada no banco
+      const message = await db.createEncryptedMessage(encryptedData, user_id, room_id);
       
-      console.log(`Message sent in room ${room.name}: ${content}`);
+      // Emitir para todos os usuários na sala
+      io.to(room_id).emit('encrypted_message_received', drizzleEncryptedMessageToSocket(message));
+      
+      console.log(`Encrypted message sent in room ${room.name}`);
       
     } catch (error) {
-      console.error('Error sending message:', error);
-      socket.emit('error', { message: 'Failed to send message' });
+      console.error('Error sending encrypted message:', error);
+      socket.emit('error', { message: 'Failed to send encrypted message' });
+    }
+  });
+
+  socket.on('initialize_crypto', async (payload: InitializeCryptoPayload) => {
+    try {
+      const { user_id, identity_key, signed_pre_key, one_time_pre_keys, registration_id } = payload;
+      
+      // Verificar se o usuário existe
+      const user = await db.getUser(user_id);
+      
+      if (!user) {
+        socket.emit('error', { message: 'User not found' });
+        return;
+      }
+      
+      // Atualizar chaves do usuário no banco
+      const userKeys = {
+        identityKey: identity_key,
+        signedPreKey: signed_pre_key,
+        oneTimePreKeys: one_time_pre_keys,
+        registrationId: registration_id,
+      };
+      
+      await db.updateUserKeys(user_id, userKeys);
+      
+      socket.emit('crypto_initialized', { success: true, message: 'Crypto keys saved successfully' });
+      
+    } catch (error) {
+      console.error('Error initializing crypto:', error);
+      socket.emit('crypto_initialized', { success: false, message: 'Failed to initialize crypto' });
+    }
+  });
+
+  socket.on('get_user_keys', async (payload: { user_id: string }) => {
+    try {
+      const { user_id } = payload;
+      const userKeys = await db.getUserKeys(user_id);
+      
+      socket.emit('user_keys_response', { user_keys: userKeys });
+      
+    } catch (error) {
+      console.error('Error getting user keys:', error);
+      socket.emit('error', { message: 'Failed to get user keys' });
     }
   });
 

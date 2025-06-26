@@ -12,16 +12,12 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:run": "tsx src/migrate.ts",
-    "db:create-tables": "tsx src/create-tables.ts",
-    "db:setup": "tsx src/setup-db.ts",
     "db:seed": "tsx src/seed.ts",
-    "db:test": "tsx src/test-tables.ts",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio",
-    "test:db": "tsx src/test-drizzle.ts",
-    "test:tables": "tsx src/test-supabase-tables.ts"
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@signalapp/libsignal-client": "^0.76.0",
     "@supabase/supabase-js": "^2.45.4",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -29,7 +25,9 @@
     "drizzle-orm": "^0.44.2",
     "express": "^4.19.2",
     "postgres": "^3.4.7",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
