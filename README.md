@@ -1,6 +1,170 @@
-# Turborepo starter
+# Radon - Chat em Tempo Real
 
-This Turborepo starter is maintained by the Turborepo core team.
+Sistema de chat em tempo real desenvolvido com arquitetura de WebSocket usando Socket.io, banco de dados PostgreSQL via Supabase, e interface web moderna em Next.js.
+
+## 🚀 Funcionalidades
+
+- ✅ **Chat em tempo real** - Mensagens instantâneas via WebSocket
+- ✅ **Múltiplas salas** - Organize conversas em diferentes canais
+- ✅ **Persistência** - Todas as mensagens são salvas no banco PostgreSQL
+- ✅ **Interface moderna** - UI responsiva e intuitiva
+- ✅ **Status de conexão** - Indicador visual da conexão WebSocket
+- ✅ **Sistema de usuários** - Login simples com nome de usuário
+
+## 🏗️ Arquitetura
+
+Este projeto utiliza uma arquitetura de monorepo com:
+
+### Backend (`apps/server`)
+- **Express.js** - Servidor HTTP e API REST
+- **Socket.io** - WebSocket para comunicação em tempo real  
+- **Supabase** - Banco PostgreSQL hospedado
+- **TypeScript** - Tipagem estática
+
+### Frontend (`apps/web`)
+- **Next.js 15** - Framework React com App Router
+- **React 19** - Interface do usuário
+- **Socket.io Client** - Conexão WebSocket com o servidor
+- **Tailwind CSS** - Estilização (via classes CSS)
+
+### Pacotes Compartilhados (`packages/`)
+- **ESLint Config** - Configurações de linting
+- **TypeScript Config** - Configurações do TypeScript
+- **UI Components** - Componentes reutilizáveis
+
+## 📦 Configuração e Instalação
+
+### Pré-requisitos
+- Node.js 18+
+- pnpm
+- Conta no Supabase
+
+### 1. Clone e instale dependências
+```bash
+git clone <repo-url>
+cd radon
+pnpm install
+```
+
+### 2. Configure o banco de dados (Supabase)
+1. Acesse [supabase.com](https://supabase.com) e crie um projeto
+2. Execute o script SQL em `apps/server/supabase-schema.sql` no SQL Editor
+3. Copie as credenciais do projeto
+
+### 3. Configure as variáveis de ambiente
+
+**Servidor** (`apps/server/.env`):
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+PORT=3001
+CLIENT_URL=http://localhost:3000
+```
+
+**Cliente Web** (`apps/web/.env.local`):
+```env
+NEXT_PUBLIC_SERVER_URL=http://localhost:3001
+```
+
+### 4. Execute o projeto
+
+#### Desenvolvimento (recomendado):
+```bash
+pnpm dev
+```
+
+#### Ou separadamente:
+```bash
+# Terminal 1 - Servidor
+cd apps/server
+pnpm dev
+
+# Terminal 2 - Cliente Web  
+cd apps/web
+pnpm dev
+```
+
+### 5. Acesse a aplicação
+- **Cliente Web**: http://localhost:3000
+- **API Server**: http://localhost:3001
+
+## 🎯 Como usar
+
+1. Acesse `http://localhost:3000`
+2. Digite seu nome de usuário
+3. Selecione uma sala de chat (algumas salas padrão são criadas automaticamente)
+4. Comece a conversar em tempo real!
+
+## 🛠️ Scripts Disponíveis
+
+```bash
+# Desenvolvimento
+pnpm dev              # Executa servidor e cliente
+pnpm dev:server      # Apenas servidor
+pnpm dev:web         # Apenas cliente web
+
+# Build
+pnpm build           # Build de produção
+pnpm build:server    # Build apenas servidor
+pnpm build:web       # Build apenas cliente
+
+# Qualidade de código
+pnpm lint            # ESLint em todos os projetos
+pnpm check-types     # Verificação TypeScript
+pnpm format          # Prettier formatting
+```
+
+## 📊 Estrutura do Banco de Dados
+
+### Tabelas Principais:
+- **users** - Informações dos usuários
+- **rooms** - Salas de chat disponíveis  
+- **messages** - Mensagens enviadas nos chats
+
+### Schema:
+```sql
+users (id, username, avatar_url, created_at)
+rooms (id, name, description, created_at)  
+messages (id, content, user_id, room_id, created_at)
+```
+
+## 🔄 Fluxo de Dados
+
+```
+┌─────────────┐    WebSocket    ┌──────────────┐    SQL     ┌─────────────┐
+│   Next.js   │ ◄────────────► │   Express    │ ◄─────────► │  Supabase   │
+│   Client    │    HTTP/REST    │   Server     │             │ PostgreSQL  │
+└─────────────┘                └──────────────┘             └─────────────┘
+```
+
+1. **Cliente** se conecta via WebSocket ao **Servidor**
+2. **Servidor** persiste mensagens no **Banco PostgreSQL**
+3. **Servidor** distribui mensagens em tempo real para clientes conectados
+4. **API REST** fornece dados históricos (salas, mensagens antigas)
+
+## 🚀 Tecnologias Utilizadas
+
+- **Frontend**: Next.js, React, TypeScript, Socket.io Client
+- **Backend**: Node.js, Express, Socket.io, TypeScript  
+- **Banco**: PostgreSQL (Supabase)
+- **Monorepo**: Turborepo
+- **Package Manager**: pnpm
+- **Code Quality**: ESLint, Prettier
+
+## 📝 Próximos Passos
+
+- [ ] Autenticação com Supabase Auth
+- [ ] Upload de arquivos/imagens
+- [ ] Mensagens privadas
+- [ ] Notificações push
+- [ ] Temas dark/light
+- [ ] Emojis e reações
+- [ ] Deploy automatizado
+
+---
+
+Desenvolvido com ❤️ usando tecnologias modernas para chat em tempo real.
 
 ## Using this example
 
