@@ -1,102 +1,137 @@
-import Image, { type ImageProps } from "next/image";
-import { Button } from "@repo/ui/button";
-import styles from "./page.module.css";
+"use client";
 
-type Props = Omit<ImageProps, "src"> & {
-  srcLight: string;
-  srcDark: string;
-};
+import { useState, useEffect } from "react";
+import { MessageList, MessageInput } from "../components/Chat";
+import { RoomList } from "../components/RoomList";
+import { useChat } from "../hooks/useSocket";
+import { fetchRooms, fetchMessages } from "../lib/api";
+import type { User, Room } from "../lib/types";
+import { LoginForm } from "../components/login-form";
 
-const ThemeImage = (props: Props) => {
-  const { srcLight, srcDark, ...rest } = props;
+export default function ChatPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
-  return (
-    <>
-      <Image {...rest} src={srcLight} className="imgLight" />
-      <Image {...rest} src={srcDark} className="imgDark" />
-    </>
+  const { messages, sendMessage, isConnected, error } = useChat(
+    currentRoomId,
+    user
   );
-};
 
-export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <ThemeImage
-          className={styles.logo}
-          srcLight="turborepo-dark.svg"
-          srcDark="turborepo-light.svg"
-          alt="Turborepo logo"
-          width={180}
-          height={38}
-          priority
+  // Load rooms when user logs in
+  useEffect(() => {
+    if (!user) return;
+
+    const loadRooms = async () => {
+      setIsLoadingRooms(true);
+      try {
+        const roomsData = await fetchRooms();
+        setRooms(roomsData);
+        if (roomsData.length > 0 && !currentRoomId) {
+          setCurrentRoomId(roomsData[0].id);
+        }
+      } catch (error) {
+        console.error("Error loading rooms:", error);
+      } finally {
+        setIsLoadingRooms(false);
+      }
+    };
+
+    loadRooms();
+  }, [user, currentRoomId]);
+
+  // Load existing messages when room changes
+  useEffect(() => {
+    if (!currentRoomId) return;
+
+    const loadMessages = async () => {
+      setIsLoadingMessages(true);
+      try {
+        await fetchMessages(currentRoomId);
+        // Note: In a real app, you'd want to merge these with real-time messages
+        // For now, we'll rely on the real-time messages from the socket
+      } catch (error) {
+        console.error("Error loading messages:", error);
+      } finally {
+        setIsLoadingMessages(false);
+      }
+    };
+
+    loadMessages();
+  }, [currentRoomId]);
+
+  if (!user) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <LoginForm
+          className="max-w-xs w-full"
+          onLogin={(user) => setUser(user)}
         />
-        <ol>
-          <li>
-            Get started by editing <code>apps/web/app/page.tsx</code>
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+      </div>
+    );
+  }
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new/clone?demo-description=Learn+to+implement+a+monorepo+with+a+two+Next.js+sites+that+has+installed+three+local+packages.&demo-image=%2F%2Fimages.ctfassets.net%2Fe5382hct74si%2F4K8ZISWAzJ8X1504ca0zmC%2F0b21a1c6246add355e55816278ef54bc%2FBasic.png&demo-title=Monorepo+with+Turborepo&demo-url=https%3A%2F%2Fexamples-basic-web.vercel.sh%2F&from=templates&project-name=Monorepo+with+Turborepo&repository-name=monorepo-turborepo&repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fturborepo%2Ftree%2Fmain%2Fexamples%2Fbasic&root-directory=apps%2Fdocs&skippable-integrations=1&teamSlug=vercel&utm_source=create-turbo"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://turborepo.com/docs?utm_source"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
+  return (
+    <div className="h-screen flex">
+      <RoomList
+        rooms={rooms}
+        currentRoomId={currentRoomId}
+        onRoomSelect={setCurrentRoomId}
+      />
+
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">
+                {rooms.find((r) => r.id === currentRoomId)?.name || "Chat"}
+              </h1>
+              <div className="flex items-center space-x-2 text-sm text-gray-500">
+                <div
+                  className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"}`}
+                />
+                <span>{isConnected ? "Connected" : "Disconnected"}</span>
+              </div>
+            </div>
+            <div className="text-sm text-gray-600">
+              Welcome, {user.username}!
+            </div>
+          </div>
+          {error && (
+            <div className="mt-2 p-2 bg-red-100 border border-red-400 text-red-700 rounded">
+              Error: {error}
+            </div>
+          )}
         </div>
-        <Button appName="web" className={styles.secondary}>
-          Open alert
-        </Button>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://vercel.com/templates?search=turborepo&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://turborepo.com?utm_source=create-turbo"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to turborepo.com →
-        </a>
-      </footer>
+
+        {/* Messages */}
+        {currentRoomId ? (
+          <>
+            {isLoadingMessages ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-gray-500">Loading messages...</div>
+              </div>
+            ) : (
+              <MessageList messages={messages} />
+            )}
+
+            <MessageInput onSendMessage={sendMessage} disabled={!isConnected} />
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            {isLoadingRooms ? (
+              <div className="text-gray-500">Loading rooms...</div>
+            ) : (
+              <div className="text-gray-500">
+                Select a room to start chatting
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
